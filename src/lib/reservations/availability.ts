@@ -18,14 +18,12 @@ function timeToMinutes(time: string) {
 export async function validateOperationalSchedule({
   admin,
   branchId,
-  employeeId,
   date,
   time,
   durationMinutes
 }: {
   admin: AdminClient;
   branchId: string;
-  employeeId?: string | null;
   date: string;
   time: string;
   durationMinutes: number;
@@ -40,22 +38,8 @@ export async function validateOperationalSchedule({
   if (error && !missingScheduleRelation(error)) return error.message;
   if (branchSchedule && !branchSchedule.is_active) return "La sede no atiende en la fecha seleccionada";
 
-  let open = branchSchedule?.opens_at?.slice(0, 5) ?? DEFAULT_OPEN;
-  let close = branchSchedule?.closes_at?.slice(0, 5) ?? DEFAULT_CLOSE;
-  if (employeeId) {
-    const { data: employeeSchedule, error: employeeError } = await admin
-      .from("employee_schedules")
-      .select("starts_at,ends_at,is_active")
-      .eq("employee_id", employeeId)
-      .eq("day_of_week", dayOfWeek)
-      .maybeSingle();
-    if (employeeError && !missingScheduleRelation(employeeError)) return employeeError.message;
-    if (employeeSchedule && !employeeSchedule.is_active) return "El barbero no atiende en la fecha seleccionada";
-    if (employeeSchedule) {
-      open = employeeSchedule.starts_at.slice(0, 5);
-      close = employeeSchedule.ends_at.slice(0, 5);
-    }
-  }
+  const open = branchSchedule?.opens_at?.slice(0, 5) ?? DEFAULT_OPEN;
+  const close = branchSchedule?.closes_at?.slice(0, 5) ?? DEFAULT_CLOSE;
 
   const start = timeToMinutes(time);
   if (date === toPeruDate() && start <= peruNowMinutes()) return "Selecciona una hora posterior a la actual";

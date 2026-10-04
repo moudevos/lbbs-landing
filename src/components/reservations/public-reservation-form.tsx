@@ -204,10 +204,8 @@ export function PublicReservationForm({ initialMainContact }: { initialMainConta
       }
 
       await swalThemed.fire(
-        "Reserva enviada",
-        data.overlapWarning
-          ? "Tu reserva quedó pendiente. Hay otra solicitud cercana y recepción confirmará disponibilidad."
-          : "Tu reserva quedó pendiente. Recepción se comunicará para confirmarla.",
+        "Reserva registrada",
+        `Tu cita quedó agendada. ${form.date} a las ${form.time} · ${selectedBranch?.name ?? "Sede"} · ${selectedService?.name ?? "Servicio"}${branchBarbers.find((item) => item.id === form.employeeId)?.name ? ` · ${branchBarbers.find((item) => item.id === form.employeeId)?.name}` : ""}.`,
         "success"
       );
 
@@ -430,8 +428,8 @@ function StepService({
 
       {customService ? (
         <div className="mb-4">
-          <button type="button" onClick={() => onCustomNote(customNote)} className="option-card w-full border-dashed p-5 text-center" data-selected={customSelected} aria-pressed={customSelected}>
-            <div className="flex flex-col items-center gap-2" onClick={(event) => { event.stopPropagation(); }}>
+          <div className="option-card w-full border-dashed p-5 text-center" data-selected={customSelected}>
+            <div className="flex flex-col items-center gap-2">
               <span className="reservation-icon"><Pencil size={18} /></span>
               <p className="text-base font-bold text-white">Otros servicios</p>
               <p className="text-sm font-semibold text-[var(--gold-soft)]">Consultar</p>
@@ -439,19 +437,18 @@ function StepService({
               <input
                 value={customNote}
                 onChange={(event) => onCustomNote(event.target.value)}
-                onClick={(event) => event.stopPropagation()}
                 placeholder="Toque aquí y escriba lo que necesita"
                 className="field-input mt-2 text-center"
               />
               <button
                 type="button"
-                onClick={(event) => { event.stopPropagation(); onSelect(customService.id); }}
+                onClick={() => onSelect(customService.id)}
                 className="mt-3 inline-flex items-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 py-2 text-sm font-semibold text-[var(--gold-soft)] transition hover:bg-[rgba(212,175,55,0.1)]"
               >
                 Usar este servicio <ArrowRight size={15} />
               </button>
             </div>
-          </button>
+          </div>
         </div>
       ) : null}
 

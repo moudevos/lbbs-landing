@@ -1,17 +1,15 @@
-import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizePhone } from "@/lib/customers/phone";
-import { dateRangeForDay, overlaps } from "@/lib/reservations/time";
-import { syncRewardAccount } from "@/lib/rewards/server";
 import { isGenericCustomerPhone } from "@/lib/customers/is-generic-customer";
+import { syncRewardAccount } from "@/lib/rewards/server";
 
 type AdminClient = SupabaseClient<any, "public", any>;
 type CustomerLookupRow = {
   id: string;
   full_name: string;
   phone: string | null;
-  normalized_phone: string | null;
-  branch_id: string | null;
+  phone_normalized: string | null;
+  preferred_branch_id: string | null;
 };
 
 export async function findOrCreateCustomerByPhone({
@@ -26,11 +24,11 @@ export async function findOrCreateCustomerByPhone({
   branchId: string;
 }) {
   const normalizedPhone = normalizePhone(phone);
-  const customerSelect = "id,full_name,phone,normalized_phone,branch_id";
+  const customerSelect = "id,full_name,phone,phone_normalized,preferred_branch_id";
   const { data: normalizedMatches, error: existingError } = await admin
     .from("customers")
     .select(customerSelect)
-    .eq("normalized_phone", normalizedPhone)
+    .eq("phone_normalized", normalizedPhone)
     .limit(1);
 
   if (existingError) {
@@ -39,7 +37,7 @@ export async function findOrCreateCustomerByPhone({
 
   let existing: CustomerLookupRow | null = normalizedMatches?.[0] ?? null;
 
-  // Older customer rows may predate normalized_phone. Reuse them instead of
+  // Older customer rows may lack phone_normalized. Reuse them instead of
   // creating a duplicate when the public reservation uses the same phone.
   if (!existing) {
     const { data: legacyCandidates, error: legacyError } = await admin
@@ -54,10 +52,10 @@ export async function findOrCreateCustomerByPhone({
       legacyCandidates?.find((customer) => normalizePhone(customer.phone ?? "") === normalizedPhone) ??
       null;
 
-    if (existing && existing.normalized_phone !== normalizedPhone) {
+    if (existing && existing.phone_normalized !== normalizedPhone) {
       const { error: normalizeError } = await admin
         .from("customers")
-        .update({ normalized_phone: normalizedPhone })
+        .update({ phone_normalized: normalizedPhone })
         .eq("id", existing.id);
 
       if (normalizeError && normalizeError.code !== "23505") {
@@ -77,7 +75,7 @@ export async function findOrCreateCustomerByPhone({
 
   const { data: created, error: createError } = await admin
     .from("customers")
-    .insert({ full_name: fullName, phone, normalized_phone: normalizedPhone, branch_id: branchId })
+    .insert({ full_name: fullName, phone, phone_normalized: normalizedPhone, preferred_branch_id: branchId })
     .select(customerSelect)
     .single();
 
@@ -88,7 +86,7 @@ export async function findOrCreateCustomerByPhone({
       const { data: concurrentCustomer, error: concurrentError } = await admin
         .from("customers")
         .select(customerSelect)
-        .eq("normalized_phone", normalizedPhone)
+        .eq("phone_normalized", normalizedPhone)
         .maybeSingle();
 
       if (concurrentError || !concurrentCustomer) {
@@ -109,46 +107,6 @@ export async function findOrCreateCustomerByPhone({
   return { customer: created, created: true, normalizedPhone, nameDiffers: false };
 }
 
-export async function assertReservationCanBeConfirmed({
-  admin,
-  reservationId,
-  employeeId,
-  startsAt,
-  endsAt,
-  price
-}: {
-  admin: AdminClient;
-  reservationId?: string;
-  employeeId: string | null | undefined;
-  startsAt: Date;
-  endsAt: Date;
-  price?: number | null;
-}) {
-  if (!employeeId) {
-    return null;
-  }
-
-  const range = dateRangeForDay(startsAt.toISOString().slice(0, 10));
-  let query = admin
-    .from("reservations")
-    .select("id,starts_at,ends_at")
-    .eq("employee_id", employeeId)
-    .eq("status", "confirmado")
-    .gte("starts_at", range.from)
-    .lte("starts_at", range.to);
-
-  if (reservationId) query = query.neq("id", reservationId);
-
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const blocked = (data ?? []).some((reservation) =>
-    overlaps(startsAt, endsAt, new Date(reservation.starts_at), new Date(reservation.ends_at))
-  );
-
-  return blocked ? NextResponse.json({ error: "No se puede confirmar: existe solapamiento para el barbero" }, { status: 409 }) : null;
-}
-
 export async function countReservationVisitOnce(admin: AdminClient, reservationId: string) {
   const { data: reservation, error } = await admin
     .from("reservations")
@@ -159,8 +117,8 @@ export async function countReservationVisitOnce(admin: AdminClient, reservationI
   if (error || !reservation || !reservation.customer_id || reservation.visit_counted_at) {
     return { counted: false, error: error?.message };
   }
-  const { data: customer } = await admin.from("customers").select("phone,normalized_phone").eq("id", reservation.customer_id).maybeSingle();
-  if (isGenericCustomerPhone(customer?.normalized_phone ?? customer?.phone)) {
+  const { data: customer } = await admin.from("customers").select("phone,phone_normalized").eq("id", reservation.customer_id).maybeSingle();
+  if (isGenericCustomerPhone(customer?.phone_normalized ?? customer?.phone)) {
     return { counted: false, error: "Cliente generico no participa en rewards." };
   }
 

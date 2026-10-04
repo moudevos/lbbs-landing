@@ -5,10 +5,11 @@ import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type VisitReservationRow = {
   id: string;
-  starts_at: string;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
   status: string;
-  services?: { name: string | null } | { name: string | null }[] | null;
-  branches?: { name: string | null } | { name: string | null }[] | null;
+  service_interest?: { name: string | null } | { name: string | null }[] | null;
+  branch?: { name: string | null } | { name: string | null }[] | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
   let customerResult = await admin
     .from("customers")
     .select("id,full_name")
-    .eq("normalized_phone", normalizedPhone)
+    .eq("phone_normalized", normalizedPhone)
     .maybeSingle();
 
   if (customerResult.error) {
@@ -56,10 +57,11 @@ export async function GET(request: NextRequest) {
 
   const { data: reservations, error: reservationsError } = await admin
     .from("reservations")
-    .select("id,starts_at,status,services(name),branches(name)")
+    .select("id,scheduled_date,scheduled_time,status,service_interest:services(name),branch:branches(name)")
     .eq("customer_id", customer.id)
-    .eq("status", "atendido")
-    .order("starts_at", { ascending: false })
+    .eq("status", "completed")
+    .order("scheduled_date", { ascending: false })
+    .order("scheduled_time", { ascending: false })
     .limit(10);
 
   if (reservationsError) return NextResponse.json({ error: reservationsError.message }, { status: 500 });
@@ -82,10 +84,12 @@ export async function GET(request: NextRequest) {
     },
     history: ((reservations ?? []) as VisitReservationRow[]).map((reservation) => ({
       id: reservation.id,
-      date: reservation.starts_at,
+      date: reservation.scheduled_date && reservation.scheduled_time
+        ? `${reservation.scheduled_date}T${reservation.scheduled_time}`
+        : reservation.scheduled_date ?? "",
       status: reservation.status,
-      service: Array.isArray(reservation.services) ? reservation.services[0]?.name : reservation.services?.name,
-      branch: Array.isArray(reservation.branches) ? reservation.branches[0]?.name : reservation.branches?.name
+      service: Array.isArray(reservation.service_interest) ? reservation.service_interest[0]?.name : reservation.service_interest?.name,
+      branch: Array.isArray(reservation.branch) ? reservation.branch[0]?.name : reservation.branch?.name
     }))
   });
 }
